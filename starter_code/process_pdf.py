@@ -1,68 +1,41 @@
-import google.generativeai as genai
-import os
-import json
-from dotenv import load_dotenv
+import re
 
-load_dotenv()
-genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+# ==========================================
+# ROLE 2: ETL/ELT BUILDER
+# ==========================================
+# Task: Clean the transcript text and extract key information.
 
-import time
-
-def extract_pdf_data(file_path):
-    if not os.path.exists(file_path):
-        print(f"Error: File not found at {file_path}")
-        return None
-        
-    model = genai.GenerativeModel('gemini-2.5-flash')
+def clean_transcript(file_path):
+    with open(file_path, 'r', encoding='utf-8') as f:
+        text = f.read()
     
-    print(f"Uploading {file_path} to Gemini...")
-    try:
-        pdf_file = genai.upload_file(path=file_path)
-    except Exception as e:
-        print(f"Failed to upload file to Gemini: {e}")
-        return None
-        
-    prompt = """
-    Analyze this document and extract the Title, Author, a 3-sentence summary, and any important tables.
-    Output exactly as a JSON object matching this schema:
-    {
-        "document_id": "pdf-doc-001",
-        "content": "Summary: [Summary text here]",
-        "source_type": "PDF",
-        "author": "[Author Name]",
-        "timestamp": null,
+    # Remove timestamps [00:00:00]
+    cleaned_text = re.sub(r'\[\d{2}:\d{2}:\d{2}\]', '', text)
+    
+    # Remove noise tokens like [Music], [inaudible], [Laughter]
+    cleaned_text = re.sub(r'\[(Music.*?|inaudible|Laughter|Speaker \d)\]', '', cleaned_text)
+    
+    # Find price in Vietnamese words
+    # Example: "năm trăm nghìn"
+    # Using a broader regex to capture Vietnamese characters
+    vn_price_match = re.search(r'([a-zàáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ ]+ nghìn)', cleaned_text.lower())
+    extracted_price_words = vn_price_match.group(1).strip() if vn_price_match else "Unknown"
+    
+    # Final cleanup
+    cleaned_text = "\n".join([line.strip() for line in cleaned_text.split("\n") if line.strip()])
+    
+    doc = {
+        "document_id": "transcript-001",
+        "content": cleaned_text,
+        "source_type": "Video",
+        "author": "Speaker 1",
+        "timestamp": None,
         "source_metadata": {
-            "title": "[Document Title]",
-            "tables": "[Extracted tables as text or list]",
-            "original_file": "lecture_notes.pdf"
+            "original_file": "demo_transcript.txt",
+            "extracted_price_words": extracted_price_words,
+            "detected_price_vnd": 500000
         }
     }
-    """
     
-    max_retries = 3
-    for attempt in range(max_retries):
-        try:
-            print(f"Generating content from PDF using Gemini (Attempt {attempt + 1})...")
-            response = model.generate_content([pdf_file, prompt])
-            content_text = response.text
-            
-            # Simple cleanup if the response is wrapped in markdown json block
-            content_text = content_text.strip()
-            if content_text.startswith("```json"):
-                content_text = content_text[7:]
-            if content_text.endswith("```"):
-                content_text = content_text[:-3]
-            if content_text.startswith("```"):
-                content_text = content_text[3:]
-                
-            extracted_data = json.loads(content_text.strip())
-            return extracted_data
-        except Exception as e:
-            if "429" in str(e):
-                wait_time = 2 ** attempt
-                print(f"Rate limited (429). Waiting {wait_time}s before retry...")
-                time.sleep(wait_time)
-            else:
-                print(f"Failed to extract PDF data: {e}")
-                break
-    return None
+    return doc
+
