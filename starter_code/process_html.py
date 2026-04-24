@@ -1,48 +1,59 @@
-import ast
+from bs4 import BeautifulSoup
 
 # ==========================================
 # ROLE 2: ETL/ELT BUILDER
 # ==========================================
-# Task: Extract docstrings and comments from legacy Python code.
+# Task: Extract product data from the HTML table, ignoring boilerplate.
 
-import re
-
-def extract_logic_from_code(file_path):
+def parse_html_catalog(file_path):
     with open(file_path, 'r', encoding='utf-8') as f:
-        source_code = f.read()
+        soup = BeautifulSoup(f, 'html.parser')
     
-    # Use AST to find docstrings
-    tree = ast.parse(source_code)
-    docstrings = []
+    table = soup.find('table', id='main-catalog')
+    if not table:
+        return []
     
-    # Module docstring
-    if ast.get_docstring(tree):
-        docstrings.append(f"Module Level: {ast.get_docstring(tree)}")
+    unified_docs = []
+    rows = table.find('tbody').find_all('tr')
+    
+    for row in rows:
+        cols = row.find_all('td')
+        if len(cols) < 4:
+            continue
+            
+        sp_id = cols[0].text.strip()
+        name = cols[1].text.strip()
+        category = cols[2].text.strip()
+        price_raw = cols[3].text.strip()
+        stock = cols[4].text.strip()
+        rating = cols[5].text.strip()
         
-    for node in ast.walk(tree):
-        if isinstance(node, (ast.FunctionDef, ast.ClassDef)):
-            ds = ast.get_docstring(node)
-            if ds:
-                docstrings.append(f"{node.name} Docstring: {ds}")
-                
-    # Use regex for business rules in comments
-    business_rules = re.findall(r'# (Business Logic Rule \d+:.*)', source_code)
-    discrepancies = re.findall(r'# (WARNING: .*|IMPORTANT: .*)', source_code)
-    
-    content = "\n".join(docstrings + business_rules + discrepancies)
-    
-    doc = {
-        "document_id": "legacy-code-001",
-        "content": content,
-        "source_type": "Code",
-        "author": "Senior Dev (retired)",
-        "timestamp": None,
-        "source_metadata": {
-            "original_file": "legacy_pipeline.py",
-            "rule_count": len(business_rules),
-            "warnings_found": len(discrepancies)
+        # Clean price
+        price_clean = price_raw.replace(',', '').replace(' VND', '')
+        if price_clean.lower() in ['n/a', 'liên hệ']:
+            price_val = 0.0
+        try:
+            price_val = float(price_clean)
+        except:
+            price_val = 0.0
+            
+        content = f"Product: {name} ({category}). Stock: {stock}. Rating: {rating}."
+        
+        doc = {
+            "document_id": f"html-{sp_id}",
+            "content": content,
+            "source_type": "HTML",
+            "author": "VinShop System",
+            "timestamp": None,
+            "source_metadata": {
+                "product_name": name,
+                "category": category,
+                "price": price_val,
+                "stock": stock,
+                "rating": rating
+            }
         }
-    }
-    
-    return doc
+        unified_docs.append(doc)
+        
+    return unified_docs
 
