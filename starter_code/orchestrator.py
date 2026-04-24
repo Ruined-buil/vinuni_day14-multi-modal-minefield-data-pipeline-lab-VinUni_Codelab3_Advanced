@@ -35,18 +35,45 @@ def main():
     output_path = os.path.join(os.path.dirname(SCRIPT_DIR), "processed_knowledge_base.json")
     # ----------------------------------------------
 
-    # TODO: Call each processing function (extract_pdf_data, clean_transcript, etc.)
-    # TODO: Run quality gates (run_quality_gate) before adding to final_kb
-    # TODO: Save final_kb to output_path using json.dump
-    
-    # Example:
-    # doc = extract_pdf_data(pdf_path)
-    # if doc and run_quality_gate(doc):
-    #     final_kb.append(doc)
+    # 1. Process PDF (Gemini)
+    doc_pdf = extract_pdf_data(pdf_path)
+    if doc_pdf and run_quality_gate(doc_pdf):
+        final_kb.append(doc_pdf)
+
+    # 2. Process Transcript
+    doc_trans = clean_transcript(trans_path)
+    if doc_trans and run_quality_gate(doc_trans):
+        final_kb.append(doc_trans)
+
+    # 3. Process HTML Catalog
+    docs_html = parse_html_catalog(html_path)
+    for doc in docs_html:
+        if run_quality_gate(doc):
+            final_kb.append(doc)
+
+    # 4. Process CSV Sales
+    docs_csv = process_sales_csv(csv_path)
+    for doc in docs_csv:
+        if run_quality_gate(doc):
+            final_kb.append(doc)
+
+    # 5. Process Legacy Code
+    doc_code = extract_logic_from_code(code_path)
+    if doc_code and run_quality_gate(doc_code):
+        final_kb.append(doc_code)
+
+    # Validate all items against UnifiedDocument schema
+    validated_kb = [UnifiedDocument(**doc).model_dump() for doc in final_kb]
+
+    # Save to JSON
+    with open(output_path, 'w', encoding='utf-8') as f:
+        json.dump(validated_kb, f, ensure_ascii=False, indent=4)
 
     end_time = time.time()
+    print("-" * 30)
     print(f"Pipeline finished in {end_time - start_time:.2f} seconds.")
-    print(f"Total valid documents stored: {len(final_kb)}")
+    print(f"Total valid documents stored: {len(validated_kb)}")
+    print(f"Output saved to: {output_path}")
 
 
 if __name__ == "__main__":
